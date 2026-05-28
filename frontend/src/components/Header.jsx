@@ -3,7 +3,7 @@ import DatabricksLogo from './DatabricksLogo';
 import { useTheme } from '../ThemeContext';
 
 const NAV = [
-  { id: 'launch', label: 'Get Started', step: 1 },
+  { id: 'choose', label: 'Get Started', step: 1 },
   { id: 'monitor', label: 'Monitor', step: 2 },
   { id: 'results', label: 'Results', step: 3 },
 ];
@@ -17,7 +17,7 @@ export default function Header({
 }) {
   const { theme, toggle } = useTheme();
   const enabled = {
-    launch: true,
+    choose: true,
     monitor: canMonitor,
     results: canResults || true,
   };

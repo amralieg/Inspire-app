@@ -95,6 +95,30 @@ if (process.env.NODE_ENV !== 'production') {
 // so API POST/PUT never hit static file middleware first.
 const STATIC_DIR = path.resolve(__dirname, '..', 'frontend', 'dist');
 
+/** Inspect deployed UI bundle — used to confirm "No data yet" / demo-data flow shipped. */
+function getFrontendBuildInfo() {
+  const indexPath = path.join(STATIC_DIR, 'index.html');
+  if (!fs.existsSync(indexPath)) {
+    return { ok: false, reason: 'frontend/dist/index.html missing — run: cd frontend && npm run build' };
+  }
+  const html = fs.readFileSync(indexPath, 'utf8');
+  const m = html.match(/assets\/index-([A-Za-z0-9_-]+)\.js/);
+  const jsBundle = m ? `index-${m[1]}.js` : null;
+  const jsPath = jsBundle ? path.join(STATIC_DIR, 'assets', jsBundle) : null;
+  let hasDemoDataUi = false;
+  if (jsPath && fs.existsSync(jsPath)) {
+    try {
+      hasDemoDataUi = fs.readFileSync(jsPath, 'utf8').includes('No data yet');
+    } catch { /* ignore */ }
+  }
+  return {
+    ok: true,
+    jsBundle,
+    hasDemoDataUi,
+    builtAt: jsPath ? fs.statSync(jsPath).mtime.toISOString() : null,
+  };
+}
+
 // OpenAPI / API Docs
 const openapiSpec = yaml.load(fs.readFileSync(path.resolve(__dirname, 'openapi.yaml'), 'utf8'));
 const apiDocsHtml = fs.readFileSync(path.resolve(__dirname, 'api-docs.html'), 'utf8');
@@ -1522,6 +1546,11 @@ app.get('/api/defaults', (req, res) => {
     /** True when the Node server can call Databricks APIs without a browser PAT (token or SP OAuth). */
     hasServerPlatformAuth: platformAuth,
     envSkipsSetupWizard,
+    features: {
+      demoDataApi: true,
+      demoDataUi: getFrontendBuildInfo().hasDemoDataUi,
+    },
+    frontendBuild: getFrontendBuildInfo(),
   });
 });
 
