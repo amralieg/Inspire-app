@@ -4,14 +4,44 @@ const { buildDemoSchemaName } = require('./demoDataService');
 const { buildDemoInspireDiscoveryParams } = require('./inspireJobParams');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
+const BACKEND_ROOT = path.resolve(__dirname, '..');
 const GENERATE_NOTEBOOK_DEST = '/Shared/inspire-ai/dbx_generate_demo_data';
-const GENERATE_NOTEBOOK_LOCAL = path.join(REPO_ROOT, 'dbx_generate_demo_data.py');
 
-async function publishPipelineNotebook(dbFetch, host, token, localPath, destPath) {
-  if (!fs.existsSync(localPath)) {
-    throw new Error(`Pipeline notebook not found: ${localPath}`);
+/** Paths where dbx_generate_demo_data.py may exist (App cwd varies). */
+function demoNotebookLocalCandidates() {
+  const cwd = process.cwd();
+  return [
+    path.join(REPO_ROOT, 'dbx_generate_demo_data.py'),
+    path.join(BACKEND_ROOT, 'dbx_generate_demo_data.py'),
+    path.join(cwd, 'dbx_generate_demo_data.py'),
+    path.join(cwd, 'backend', 'dbx_generate_demo_data.py'),
+  ];
+}
+
+function readDemoNotebookBase64FromDisk() {
+  for (const p of demoNotebookLocalCandidates()) {
+    if (fs.existsSync(p)) {
+      return { base64: fs.readFileSync(p).toString('base64'), source: p };
+    }
   }
-  const content = fs.readFileSync(localPath).toString('base64');
+  return null;
+}
+
+function readDemoNotebookBase64FromBundle() {
+  try {
+    const b64 = require('../demo_notebook_bundle');
+    if (b64 && typeof b64 === 'string') return { base64: b64, source: 'demo_notebook_bundle.js' };
+  } catch (_) {
+    /* optional until package/build */
+  }
+  return null;
+}
+
+function loadDemoNotebookBase64() {
+  return readDemoNotebookBase64FromDisk() || readDemoNotebookBase64FromBundle();
+}
+
+async function publishPipelineNotebookContent(dbFetch, host, token, base64Content, destPath) {
   try {
     await dbFetch(host, token, '/api/2.0/workspace/mkdirs', {
       method: 'POST',
@@ -25,7 +55,7 @@ async function publishPipelineNotebook(dbFetch, host, token, localPath, destPath
     body: JSON.stringify({
       path: destPath,
       format: 'SOURCE',
-      content,
+      content: base64Content,
       language: 'PYTHON',
       overwrite: true,
     }),
@@ -37,18 +67,75 @@ async function publishPipelineNotebook(dbFetch, host, token, localPath, destPath
   return destPath;
 }
 
+async function publishPipelineNotebook(dbFetch, host, token, localPath, destPath) {
+  if (!fs.existsSync(localPath)) {
+    throw new Error(`Pipeline notebook not found: ${localPath}`);
+  }
+  const content = fs.readFileSync(localPath).toString('base64');
+  return publishPipelineNotebookContent(dbFetch, host, token, content, destPath);
+}
+
+/**
+ * Resolve demo generator notebook for Jobs API.
+ * Databricks Apps often omit repo-root .py files; prefer workspace copy from installer,
+ * then publish from disk or embedded bundle.
+ */
+async function ensureDemoPipelineNotebookPublished(
+  dbFetch,
+  host,
+  token,
+  resolveWorkspaceNotebookObjectPath,
+) {
+  if (resolveWorkspaceNotebookObjectPath) {
+    const verified = await resolveWorkspaceNotebookObjectPath(host, token, GENERATE_NOTEBOOK_DEST);
+    if (verified) {
+      console.log(`📓 Demo pipeline notebook already in workspace: ${verified}`);
+      return verified;
+    }
+  } else {
+    try {
+      const check = await dbFetch(
+        host,
+        token,
+        `/api/2.0/workspace/get-status?path=${encodeURIComponent(GENERATE_NOTEBOOK_DEST)}`,
+      );
+      if (check.ok) {
+        const data = await check.json();
+        if (data.object_type === 'NOTEBOOK') {
+          console.log(`📓 Demo pipeline notebook already in workspace: ${GENERATE_NOTEBOOK_DEST}`);
+          return GENERATE_NOTEBOOK_DEST;
+        }
+      }
+    } catch (_) {
+      /* publish below */
+    }
+  }
+
+  const loaded = loadDemoNotebookBase64();
+  if (!loaded) {
+    throw new Error(
+      `Demo pipeline notebook not found at ${GENERATE_NOTEBOOK_DEST} and no local/bundled copy. ` +
+        'Run installer_workspace.py (publishes to /Shared/inspire-ai/) or redeploy with npm run deploy.',
+    );
+  }
+
+  console.log(`📦 Publishing demo pipeline notebook from ${loaded.source} → ${GENERATE_NOTEBOOK_DEST}`);
+  await publishPipelineNotebookContent(dbFetch, host, token, loaded.base64, GENERATE_NOTEBOOK_DEST);
+  return GENERATE_NOTEBOOK_DEST;
+}
+
 async function resolveInspireNotebookPath(host, token, { ensureInspireNotebookPublished, resolveWorkspaceNotebookObjectPath }) {
-  let path = '/Shared/inspire_ai';
+  let notebookPath = '/Shared/inspire_ai';
   if (ensureInspireNotebookPublished) {
     const pub = await ensureInspireNotebookPublished(host, token);
-    if (pub?.path) path = pub.path;
+    if (pub?.path) notebookPath = pub.path;
   }
   if (resolveWorkspaceNotebookObjectPath) {
-    const verified = await resolveWorkspaceNotebookObjectPath(host, token, path);
+    const verified = await resolveWorkspaceNotebookObjectPath(host, token, notebookPath);
     if (verified) return verified;
   }
   throw new Error(
-    `Inspire agent notebook not found at ${path}. Open Workspace setup or run a normal Inspire job once to auto-publish.`,
+    `Inspire agent notebook not found at ${notebookPath}. Open Workspace setup or run a normal Inspire job once to auto-publish.`,
   );
 }
 
@@ -110,7 +197,12 @@ async function triggerDemoDataPipeline(
   const [catalog] = inspireDb.split('.');
   const demoSchema = buildDemoSchemaName(business, sid);
 
-  await publishPipelineNotebook(dbFetch, host, token, GENERATE_NOTEBOOK_LOCAL, GENERATE_NOTEBOOK_DEST);
+  const generateNotebookPath = await ensureDemoPipelineNotebookPublished(
+    dbFetch,
+    host,
+    token,
+    resolveWorkspaceNotebookObjectPath,
+  );
 
   const inspireNotebookPath = await resolveInspireNotebookPath(host, token, {
     ensureInspireNotebookPublished,
@@ -138,7 +230,7 @@ async function triggerDemoDataPipeline(
       {
         task_key: 'generate_demo_data',
         notebook_task: {
-          notebook_path: GENERATE_NOTEBOOK_DEST,
+          notebook_path: generateNotebookPath,
           source: 'WORKSPACE',
           base_parameters: {
             user_description: desc,
@@ -173,7 +265,7 @@ async function triggerDemoDataPipeline(
   };
 
   console.log(
-    `📋 Demo pipeline: ${GENERATE_NOTEBOOK_DEST} → ${inspireNotebookPath} (cluster=${resolvedClusterId || 'serverless'}, session=${sid})`,
+    `📋 Demo pipeline: ${generateNotebookPath} → ${inspireNotebookPath} (cluster=${resolvedClusterId || 'serverless'}, session=${sid})`,
   );
 
   const createResp = await dbFetch(host, token, '/api/2.1/jobs/create', {
@@ -202,7 +294,7 @@ async function triggerDemoDataPipeline(
     run_id: runId,
     job_run_url: databricksJobRunUrl(host, jobId, runId),
     pipeline: {
-      step1_notebook: GENERATE_NOTEBOOK_DEST,
+      step1_notebook: generateNotebookPath,
       step2_notebook: inspireNotebookPath,
       inspire_agent_notebook: inspireNotebookPath,
       inspire_database: inspireDb,
@@ -216,4 +308,6 @@ async function triggerDemoDataPipeline(
 module.exports = {
   triggerDemoDataPipeline,
   publishPipelineNotebook,
+  ensureDemoPipelineNotebookPublished,
+  loadDemoNotebookBase64,
 };

@@ -58,9 +58,15 @@ fi
 
 # ─── 4. Verify notebook bundle ───
 if [ -f "dbx_inspire_ai_agent.ipynb" ] || [ -f "backend/notebook_bundle.js" ]; then
-  echo "✅ Notebook bundle found."
+  echo "✅ Inspire agent notebook bundle found."
 else
-  echo "⚠️  WARNING: No notebook bundle found. Publish feature will be unavailable."
+  echo "⚠️  WARNING: No Inspire agent notebook bundle found. Publish feature will be unavailable."
+fi
+
+if [ -f "backend/demo_notebook_bundle.js" ] || [ -f "backend/dbx_generate_demo_data.py" ] || [ -f "dbx_generate_demo_data.py" ]; then
+  echo "✅ Demo data pipeline notebook source found."
+else
+  echo "⚠️  WARNING: dbx_generate_demo_data not bundled — I don't have data may fail until installer publishes /Shared/inspire-ai/dbx_generate_demo_data."
 fi
 
 # ─── 5. Show Databricks connection info ───
