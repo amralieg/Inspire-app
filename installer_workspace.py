@@ -298,17 +298,22 @@ def api_get(path):
     return r.json()
 
 
-def load_publish_content_b64(source_path, export_formats=("JUPYTER", "SOURCE")):
+def export_workspace_b64(source_path, export_formats=("JUPYTER",)):
     """
-    Load notebook bytes as base64 for workspace/import.
-    Workspace paths (DBFS fuse) are not readable with open() — use export API first.
+    Export workspace notebook/file as base64 (same pattern as main branch).
+    Always calls workspace/export (strip /Workspace prefix); falls back to open() on local paths.
     """
     path = str(source_path or "").strip()
     if not path:
         return None
 
-    if path.startswith("/Workspace"):
-        export_path = path.replace("/Workspace", "", 1)
+    export_paths = []
+    stripped = path.replace("/Workspace", "", 1) if path.startswith("/Workspace") else path
+    for p in (stripped, path):
+        if p and p not in export_paths:
+            export_paths.append(p)
+
+    for export_path in export_paths:
         for fmt in export_formats:
             try:
                 resp = api(
@@ -318,10 +323,10 @@ def load_publish_content_b64(source_path, export_formats=("JUPYTER", "SOURCE")):
                 if resp.status_code == 200:
                     content = (resp.json() or {}).get("content") or ""
                     if content:
-                        print(f"  Exported {path} ({fmt}): {len(content)} bytes base64")
+                        print(f"  Exported {export_path} ({fmt}): {len(content)} bytes base64")
                         return content
             except Exception as e:
-                print(f"  export note ({fmt}): {e}")
+                print(f"  export note {export_path} ({fmt}): {e}")
 
     try:
         with open(path, "rb") as f:
@@ -429,7 +434,7 @@ if not notebook_source:
 
 print(f"Notebook source: {notebook_source}")
 
-b64 = load_publish_content_b64(notebook_source, export_formats=("JUPYTER", "SOURCE"))
+b64 = export_workspace_b64(notebook_source, export_formats=("JUPYTER",))
 if not b64:
     raise FileNotFoundError(f"Could not export or read notebook: {notebook_source}")
 
@@ -472,7 +477,7 @@ for candidate in [
 
 if generate_source:
     print(f"Demo generator source: {generate_source}")
-    gen_b64 = load_publish_content_b64(generate_source, export_formats=("SOURCE", "JUPYTER"))
+    gen_b64 = export_workspace_b64(generate_source, export_formats=("SOURCE", "JUPYTER"))
     if gen_b64:
         try:
             api("POST", "/api/2.0/workspace/mkdirs", {"path": f"/Shared/{APP_NAME}"})
