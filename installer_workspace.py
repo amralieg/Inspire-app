@@ -435,6 +435,42 @@ except: pass
 assert NOTEBOOK_PATH, "❌ Notebook publish failed."
 print(f"NOTEBOOK_PATH = {NOTEBOOK_PATH}")
 
+# Demo-data pipeline notebook (I don't have data — step 1)
+GENERATE_DEMO_DEST = f"/Shared/{APP_NAME}/dbx_generate_demo_data"
+generate_source = None
+for candidate in [
+    f"{SOURCE_FOLDER}/dbx_generate_demo_data.py",
+    f"{SOURCE_FOLDER}/dbx_generate_demo_data",
+]:
+    if os.path.exists(candidate):
+        generate_source = candidate
+        break
+
+if generate_source:
+    with open(generate_source, "rb") as f:
+        gen_b64 = base64.b64encode(f.read()).decode("utf-8")
+    try:
+        api("POST", "/api/2.0/workspace/mkdirs", {"path": f"/Shared/{APP_NAME}"})
+    except Exception:
+        pass
+    gen_resp = api(
+        "POST",
+        "/api/2.0/workspace/import",
+        {
+            "path": GENERATE_DEMO_DEST,
+            "format": "SOURCE",
+            "content": gen_b64,
+            "language": "PYTHON",
+            "overwrite": True,
+        },
+    )
+    if gen_resp.status_code in (200, 201):
+        print(f"Published demo generator: ✅ {GENERATE_DEMO_DEST}")
+    else:
+        print(f"Demo generator publish: ⚠️ {gen_resp.status_code} {gen_resp.text[:200]}")
+else:
+    print("⚠️ dbx_generate_demo_data.py not found in source — skip demo pipeline notebook publish")
+
 # COMMAND ----------
 
 # MAGIC %md
@@ -549,6 +585,7 @@ if NEW_SP_APP_ID and WAREHOUSE_ID:
     grants = [
         f"GRANT USE_CATALOG ON CATALOG `{CATALOG}` TO `{sp}`",
         f"GRANT BROWSE ON CATALOG `{CATALOG}` TO `{sp}`",
+        f"GRANT CREATE SCHEMA ON CATALOG `{CATALOG}` TO `{sp}`",
         f"GRANT USE_SCHEMA ON SCHEMA `{CATALOG}`.`{SCHEMA}` TO `{sp}`",
         f"GRANT CREATE_TABLE ON SCHEMA `{CATALOG}`.`{SCHEMA}` TO `{sp}`",
         f"GRANT SELECT ON SCHEMA `{CATALOG}`.`{SCHEMA}` TO `{sp}`",

@@ -15,6 +15,8 @@ dbutils.widgets.text("inspire_database", "", "3. Inspire tracking: catalog._insp
 dbutils.widgets.text("session_id", "", "4. Session ID")
 dbutils.widgets.text("business_name", "Demo", "5. Business display name (fallback display_name)")
 dbutils.widgets.text("demo_schema", "", "6. Demo schema name (under inspire_catalog)")
+dbutils.widgets.text("warehouse_id", "", "7. SQL warehouse (SP CAN_USE)")
+dbutils.widgets.text("app_sp_application_id", "", "8. Inspire App service principal applicationId")
 
 user_description = (dbutils.widgets.get("user_description") or "").strip()
 inspire_catalog = (dbutils.widgets.get("inspire_catalog") or "").strip()
@@ -22,6 +24,8 @@ inspire_database = (dbutils.widgets.get("inspire_database") or "").strip()
 session_id = (dbutils.widgets.get("session_id") or "").strip()
 business_name = (dbutils.widgets.get("business_name") or "Demo").strip()
 demo_schema = (dbutils.widgets.get("demo_schema") or "").strip()
+warehouse_id = (dbutils.widgets.get("warehouse_id") or "").strip()
+app_sp_application_id = (dbutils.widgets.get("app_sp_application_id") or "").strip()
 
 if not user_description:
     raise ValueError("user_description is required")
@@ -50,26 +54,135 @@ def _current_uc_principal():
         return None
 
 
-def _grant_schema_access(catalog, schema):
-    principal = _current_uc_principal()
+def _run_grant_sql(sql, label=None):
+    try:
+        spark.sql(sql)
+        if label:
+            print(f"  ✓ {label}")
+        return True
+    except Exception as e:
+        print(f"  grant note{f' ({label})' if label else ''}: {e}")
+        return False
+
+
+def _grant_schema_access(catalog, schema, principal):
     if not principal:
-        print(f"Skip grants for {catalog}.{schema}: could not resolve current_user()")
+        print(f"Skip grants for {catalog}.{schema}: no principal")
         return
     fq_schema = f"`{catalog}`.`{schema}`"
     fq_catalog = f"`{catalog}`"
     statements = [
-        f"GRANT USE CATALOG ON CATALOG {fq_catalog} TO `{principal}`",
-        f"GRANT CREATE SCHEMA ON CATALOG {fq_catalog} TO `{principal}`",
-        f"GRANT USE SCHEMA ON SCHEMA {fq_schema} TO `{principal}`",
-        f"GRANT CREATE TABLE ON SCHEMA {fq_schema} TO `{principal}`",
-        f"GRANT SELECT ON SCHEMA {fq_schema} TO `{principal}`",
-        f"GRANT MODIFY ON SCHEMA {fq_schema} TO `{principal}`",
+        (f"GRANT USE CATALOG ON CATALOG {fq_catalog} TO `{principal}`", "USE CATALOG"),
+        (f"GRANT CREATE SCHEMA ON CATALOG {fq_catalog} TO `{principal}`", "CREATE SCHEMA on catalog"),
+        (f"GRANT USE SCHEMA ON SCHEMA {fq_schema} TO `{principal}`", "USE SCHEMA"),
+        (f"GRANT CREATE TABLE ON SCHEMA {fq_schema} TO `{principal}`", "CREATE TABLE"),
+        (f"GRANT SELECT ON SCHEMA {fq_schema} TO `{principal}`", "SELECT"),
+        (f"GRANT MODIFY ON SCHEMA {fq_schema} TO `{principal}`", "MODIFY"),
     ]
-    for sql in statements:
-        try:
-            spark.sql(sql)
-        except Exception as e:
-            print(f"  grant note: {e}")
+    for sql, label in statements:
+        _run_grant_sql(sql, label)
+
+
+def _resolve_app_sp_application_id(explicit_id):
+    sp = (explicit_id or "").strip()
+    if sp:
+        return sp
+    try:
+        import requests
+
+        host, token = _notebook_api_context()
+        if not host or not token:
+            return None
+        url = f"{host}/api/2.0/preview/scim/v2/ServicePrincipals?filter=displayName co \"inspire-ai\"&count=50"
+        resp = requests.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=60)
+        if resp.status_code >= 400:
+            return None
+        for row in resp.json().get("Resources", []):
+            app_id = (row.get("applicationId") or "").strip()
+            if app_id:
+                print(f"Resolved inspire-ai SP: {row.get('displayName')} ({app_id[:8]}…)")
+                return app_id
+    except Exception as e:
+        print(f"Could not resolve inspire-ai SP: {e}")
+    return None
+
+
+def _grant_warehouse_can_use(sp_app_id, wh_id):
+    if not sp_app_id or not wh_id:
+        return
+    try:
+        import requests
+
+        host, token = _notebook_api_context()
+        url = f"{host}/api/2.0/permissions/sql/warehouses/{wh_id}"
+        resp = requests.patch(
+            url,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "access_control_list": [
+                    {"service_principal_name": sp_app_id, "permission_level": "CAN_USE"}
+                ]
+            },
+            timeout=60,
+        )
+        if resp.status_code == 200:
+            print(f"  ✓ CAN_USE on warehouse {wh_id}")
+        else:
+            print(f"  warehouse grant note: {resp.status_code} {resp.text[:200]}")
+    except Exception as e:
+        print(f"  warehouse grant note: {e}")
+
+
+def _grant_inspire_app_service_principal(sp_app_id, catalog, track_schema, demo_schema, warehouse_id):
+    """
+    Mirror installer_workspace.py Step 4 so the Databricks App SP can browse UC metadata,
+    write session tables, and read demo data after this pipeline completes.
+    """
+    if not sp_app_id:
+        raise RuntimeError(
+            "app_sp_application_id is required. Run installer_workspace.py once (deploys inspire-ai App + SP) "
+            "or set DATABRICKS_CLIENT_ID / SP_CLIENT_ID in the app environment."
+        )
+
+    print(f"Granting Inspire App service principal ({sp_app_id[:8]}…) …")
+    fq_cat = f"`{catalog}`"
+    fq_track = f"`{catalog}`.`{track_schema}`"
+    fq_demo = f"`{catalog}`.`{demo_schema}`"
+
+    core_grants = [
+        (f"GRANT USE CATALOG ON CATALOG {fq_cat} TO `{sp_app_id}`", "SP USE CATALOG"),
+        (f"GRANT BROWSE ON CATALOG {fq_cat} TO `{sp_app_id}`", "SP BROWSE catalog"),
+        (f"GRANT CREATE SCHEMA ON CATALOG {fq_cat} TO `{sp_app_id}`", "SP CREATE SCHEMA on catalog"),
+        (f"GRANT USE SCHEMA ON SCHEMA {fq_track} TO `{sp_app_id}`", "SP USE _inspire schema"),
+        (f"GRANT CREATE TABLE ON SCHEMA {fq_track} TO `{sp_app_id}`", "SP CREATE in _inspire"),
+        (f"GRANT SELECT ON SCHEMA {fq_track} TO `{sp_app_id}`", "SP SELECT _inspire"),
+        (f"GRANT MODIFY ON SCHEMA {fq_track} TO `{sp_app_id}`", "SP MODIFY _inspire"),
+        (f"GRANT USE SCHEMA ON SCHEMA {fq_demo} TO `{sp_app_id}`", "SP USE demo schema"),
+        (f"GRANT CREATE TABLE ON SCHEMA {fq_demo} TO `{sp_app_id}`", "SP CREATE demo schema"),
+        (f"GRANT SELECT ON SCHEMA {fq_demo} TO `{sp_app_id}`", "SP SELECT demo schema"),
+        (f"GRANT MODIFY ON SCHEMA {fq_demo} TO `{sp_app_id}`", "SP MODIFY demo schema"),
+    ]
+    for sql, label in core_grants:
+        _run_grant_sql(sql, label)
+
+    _skip_catalogs = {"samples", "system", "__databricks_internal", "information_schema"}
+    try:
+        other_catalogs = [
+            r.catalog
+            for r in spark.sql("SHOW CATALOGS").collect()
+            if r.catalog and r.catalog not in _skip_catalogs and r.catalog != catalog
+        ]
+        for cat in other_catalogs[:40]:
+            _run_grant_sql(f"GRANT USE CATALOG ON CATALOG `{cat}` TO `{sp_app_id}`")
+            _run_grant_sql(f"GRANT BROWSE ON CATALOG `{cat}` TO `{sp_app_id}`")
+    except Exception as e:
+        print(f"  browse-other-catalogs note: {e}")
+
+    _grant_warehouse_can_use(sp_app_id, warehouse_id)
+    print("Service principal grants complete.")
 
 
 def _ensure_catalog_exists(catalog):
@@ -83,11 +196,13 @@ def _ensure_catalog_exists(catalog):
         ) from e
 
 
+_runner = _current_uc_principal()
+
 _ensure_catalog_exists(inspire_catalog)
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS `{track_catalog}`.`{track_schema}`")
-_grant_schema_access(track_catalog, track_schema)
+_grant_schema_access(track_catalog, track_schema, _runner)
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS `{inspire_catalog}`.`{demo_schema}`")
-_grant_schema_access(inspire_catalog, demo_schema)
+_grant_schema_access(inspire_catalog, demo_schema, _runner)
 spark.sql(f"USE CATALOG `{inspire_catalog}`")
 spark.sql(f"USE SCHEMA `{demo_schema}`")
 print(f"Ensured schemas: {inspire_database} and {demo_schema_fq}")
@@ -369,6 +484,16 @@ uc_metadata = ",".join(tables)
 
 print(f"display_name: {display_name}")
 print(f"uc_metadata ({len(tables)} tables): {uc_metadata}")
+
+# ── 5) Grant Inspire App service principal (installer_workspace parity) ──
+_sp_id = _resolve_app_sp_application_id(app_sp_application_id)
+_grant_inspire_app_service_principal(
+    _sp_id,
+    inspire_catalog,
+    track_schema,
+    demo_schema,
+    warehouse_id,
+)
 
 # COMMAND ----------
 

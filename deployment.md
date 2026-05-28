@@ -73,7 +73,7 @@ You will see two dropdowns (order matters):
    - Resolves **warehouse** and **catalog** from the widgets (or overrides).
    - Unpacks **InspireAI-workspace.zip** into **`/Workspace/Users/<you>/InspireAI`** when the zip is present (cleaning an old folder first), or uses an existing **`app.yaml`** tree (see fallbacks below).
    - Runs **`CREATE SCHEMA IF NOT EXISTS`** for **`{catalog}._inspire`** via the Statement API.
-   - Publishes **`dbx_inspire_ai_agent`** under **`/Shared/inspire-ai/`** so the App service principal can run jobs against it.
+   - Publishes **`dbx_inspire_ai_agent`** and **`dbx_generate_demo_data`** under **`/Shared/inspire-ai/`** so jobs and the App service principal can run them.
    - Writes workspace **`app.yaml`** with **`INSPIRE_DATABASE`**, **`INSPIRE_WAREHOUSE_ID`**, **`NOTEBOOK_PATH`**, **`INSPIRE_AUTO_SETUP`**, and related env for the Node app.
    - Creates or updates the **inspire-ai** Databricks App and triggers a deployment from the source folder.
    - Applies **Unity Catalog and warehouse** grants for the app **service principal** where possible.
@@ -137,6 +137,8 @@ These warnings are advisory; you can still launch. For the best outcomes, treat 
 
 If you have no UC tables yet, use **I don’t have data — generate demo tables instead**. That runs a separate pipeline: an LLM generates demo Delta tables (with Unity Catalog table and column descriptions), then Inspire discovers use cases on those tables. See the in-app flow on that page for details.
 
+**Permissions:** Run **`installer_workspace.py` once** before using this flow. The installer deploys the **inspire-ai** App and grants its **service principal** access to `{catalog}._inspire`, the SQL warehouse, and UC browse on other catalogs. The demo pipeline’s **first task** (`dbx_generate_demo_data`) then grants the same service principal on the new **`inspire_demo_*`** schema so the App and step 2 (Inspire discovery) work end-to-end without manual SQL grants.
+
 ---
 
 ## 7. Optional: deploy from your laptop (npm run deploy)
@@ -155,7 +157,8 @@ The script packages the zip, imports it and **installer_workspace.py**, and subm
 
 - **While you run the installer:** your user identity needs warehouse **CAN_USE**, rights to create or use **{catalog}._inspire**, and permissions to create or update the App and workspace paths the notebook touches.
 - **After deployment:** the **App service principal** is what the running app uses. The installer grants:
-  - On the **chosen Inspire catalog** only: **USE_CATALOG**, **BROWSE**, and on **`{catalog}._inspire`**: **USE_SCHEMA**, **CREATE_TABLE**, **SELECT**, **MODIFY** (session and `__inspire_*` tables live here).
+  - On the **chosen Inspire catalog**: **USE_CATALOG**, **BROWSE**, **CREATE SCHEMA** (so demo schemas can be created), and on **`{catalog}._inspire`**: **USE_SCHEMA**, **CREATE_TABLE**, **SELECT**, **MODIFY** (session and `__inspire_*` tables live here).
+  - The **“I don’t have data”** pipeline task 1 additionally grants **USE_SCHEMA**, **SELECT**, and **MODIFY** on each new **`{catalog}.inspire_demo_*`** schema after demo tables are created.
   - On **every other catalog** (except a few system names): **BROWSE** only so the UI can list catalogs/schemas/tables for discovery — **no** **USE_CATALOG** elsewhere, so the SP cannot run queries against arbitrary catalogs through UC alone.
   - **CAN_USE** on the SQL warehouse you picked.
 

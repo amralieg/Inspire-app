@@ -14,6 +14,7 @@ const yaml = require('js-yaml');
 const { stripAiDemoDisclaimerHtml, stripDisclaimerDeep } = require('./stripAiDisclaimer');
 const { TEMPLATE_META } = require('./lib/demoDataService');
 const { triggerDemoDataPipeline } = require('./lib/demoDataPipeline');
+const { resolveInspireAppServicePrincipalId } = require('./lib/inspireSpGrants');
 
 const app = express();
 app.use(express.json({ limit: '50mb' }));
@@ -2077,6 +2078,20 @@ app.post('/api/demo-data/start', requireToken, async (req, res) => {
       String(cluster_id || process.env.INSPIRE_CLUSTER_ID || process.env.INSPIRE_DEPLOY_CLUSTER_ID || '').trim() ||
       undefined;
 
+    const pipelineWarehouseId =
+      String(req.body?.warehouse_id || DEFAULT_WAREHOUSE_ID || '').trim() || undefined;
+
+    const appSpApplicationId = await resolveInspireAppServicePrincipalId(
+      dbFetch,
+      req.dbHost,
+      req.dbToken,
+    );
+    if (!appSpApplicationId) {
+      console.warn(
+        '⚠️ Demo pipeline: inspire-ai service principal not resolved — step 1 may skip SP grants',
+      );
+    }
+
     const pipelineRun = await triggerDemoDataPipeline(
       dbFetch,
       databricksJobRunUrl,
@@ -2088,6 +2103,8 @@ app.post('/api/demo-data/start', requireToken, async (req, res) => {
         inspireDatabase: inspireDb,
         sessionId,
         cluster_id: pipelineClusterId,
+        warehouse_id: pipelineWarehouseId,
+        app_sp_application_id: appSpApplicationId,
         ensureInspireNotebookPublished: ensureNotebookPublished,
         resolveWorkspaceNotebookObjectPath,
       },
