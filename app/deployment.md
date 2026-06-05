@@ -25,10 +25,10 @@ On a machine with **Node.js** and the repo cloned:
 
 ```bash
 cd InspireAI
-bash scripts/package-for-workspace.sh
+npm run package:workspace
 ```
 
-This builds the frontend (unless `SKIP_BUILD=1`) and writes **dist/InspireAI-workspace.zip** (or `ARTIFACT_ZIP` if you set it).
+This builds the frontend (unless `SKIP_BUILD=1`) and writes **dist/InspireAI-workspace.zip** at the repo root (or `ARTIFACT_ZIP` if you set it). The zip contains the **`app/`** folder contents (`app.yaml`, backend, frontend, notebooks).
 
 ---
 
@@ -42,7 +42,7 @@ Upload the file so it exists at **exactly**:
 
 Replace `<your-workspace-email>` with the same identity Databricks shows under **Workspace** (often your corporate email). You can use **Databricks UI: Workspace, your user folder, Upload**, or the Databricks CLI **workspace import** with that path.
 
-**Also upload the installer notebook** to the same area (any path you like), for example import **installer_workspace.py** from the repo as a **Python notebook** so you can open it and **Run All**.
+**Also upload the installer notebook** to the same area (any path you like), for example import **`installer_workspace.py`** from the **repo root** as a **Python notebook** so you can open it and **Run All**.
 
 When you use **npm run deploy** (section 6), the CLI imports the installer to **`/Workspace/Users/<your-email>/InspireAI_workspace_installer`** by default. Open that path if the script prints it after upload.
 
