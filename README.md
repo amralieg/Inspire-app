@@ -1,15 +1,6 @@
 # Inspire AI
 
-Data strategy copilot powered by Databricks.
-
-## Repository layout
-
-| Path | Purpose |
-|------|---------|
-| **`installer_workspace.py`** | Databricks workspace installer notebook — open this in the workspace and **Run All** |
-| **`app/`** | Full-stack Databricks App (backend, frontend, agent notebooks, deploy scripts) |
-
-See [app/deployment.md](app/deployment.md) for how to deploy the Databricks App and workspace installer.
+Data strategy copilot powered by Databricks. See [deployment.md](deployment.md) for how to deploy the Databricks App and workspace installer.
 
 ## Legal Information
 

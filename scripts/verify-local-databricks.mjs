@@ -8,11 +8,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const appRoot = path.resolve(__dirname, '..');
-const repoRoot = path.resolve(appRoot, '..');
+const root = path.resolve(__dirname, '..');
 
 function loadEnv() {
-  const envPath = path.join(repoRoot, '.env');
+  const envPath = path.join(root, '.env');
   if (!fs.existsSync(envPath)) {
     console.error('❌ Missing .env — run: cp .env.example .env');
     process.exit(1);

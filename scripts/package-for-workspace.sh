@@ -2,9 +2,8 @@
 # Build frontend (optional) and create InspireAI-workspace.zip for `npm run deploy` / deploy:inspire.
 set -euo pipefail
 
-APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-REPO_ROOT="$(cd "$APP_ROOT/.." && pwd)"
-cd "$APP_ROOT"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
 
 SKIP_BUILD="${SKIP_BUILD:-0}"
 if [[ "$SKIP_BUILD" != "1" ]]; then
@@ -13,11 +12,11 @@ if [[ "$SKIP_BUILD" != "1" ]]; then
 fi
 
 echo "==> Bundling demo pipeline notebook for Databricks App runtime"
-node "$APP_ROOT/scripts/bundle-demo-notebook.mjs"
-cp -f "$APP_ROOT/dbx_generate_demo_data.py" "$APP_ROOT/backend/dbx_generate_demo_data.py"
+node "$ROOT/scripts/bundle-demo-notebook.mjs"
+cp -f "$ROOT/dbx_generate_demo_data.py" "$ROOT/backend/dbx_generate_demo_data.py"
 
-mkdir -p "$REPO_ROOT/dist"
-OUT="${ARTIFACT_ZIP:-$REPO_ROOT/dist/InspireAI-workspace.zip}"
+mkdir -p "$ROOT/dist"
+OUT="${ARTIFACT_ZIP:-$ROOT/dist/InspireAI-workspace.zip}"
 rm -f "$OUT"
 
 echo "==> Zipping to $OUT"
