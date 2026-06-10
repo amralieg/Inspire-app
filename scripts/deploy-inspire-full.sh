@@ -8,14 +8,13 @@
 # Usage: npm run deploy   (alias for deploy:inspire)
 set -euo pipefail
 
-APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-REPO_ROOT="$(cd "$APP_ROOT/.." && pwd)"
-cd "$APP_ROOT"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
 
-if [[ -f "$REPO_ROOT/.env" ]]; then
+if [[ -f "$ROOT/.env" ]]; then
   set -a
   # shellcheck source=/dev/null
-  source "$REPO_ROOT/.env"
+  source "$ROOT/.env"
   set +a
 fi
 
@@ -31,7 +30,7 @@ if [[ -z "${DATABRICKS_CONFIG_PROFILE:-}" && ( -z "${DATABRICKS_HOST:-}" || -z "
 fi
 
 echo "==> 1) Package (frontend build + InspireAI-workspace.zip)"
-bash "$APP_ROOT/scripts/package-for-workspace.sh"
+bash "$ROOT/scripts/package-for-workspace.sh"
 
 USER_EMAIL="$( "${DB[@]}" current-user me -o json | python3 -c "import json,sys; print(json.load(sys.stdin)['userName'])")"
 INSPIRE_DIR="/Workspace/Users/${USER_EMAIL}/InspireAI"
@@ -47,8 +46,8 @@ ZIP_STEM="/Workspace/Users/${USER_EMAIL}/InspireAI-workspace"
 "${DB[@]}" workspace delete "$NB_REMOTE" --recursive 2>/dev/null || true
 
 echo "==> 3) Import latest zip + installer_workspace.py"
-"${DB[@]}" workspace import "$ZIP_REMOTE" --file "$REPO_ROOT/dist/InspireAI-workspace.zip" --format AUTO --overwrite
-"${DB[@]}" workspace import "$NB_REMOTE" --file "$REPO_ROOT/installer_workspace.py" --format SOURCE --language PYTHON --overwrite
+"${DB[@]}" workspace import "$ZIP_REMOTE" --file "$ROOT/dist/InspireAI-workspace.zip" --format AUTO --overwrite
+"${DB[@]}" workspace import "$NB_REMOTE" --file "$ROOT/installer_workspace.py" --format SOURCE --language PYTHON --overwrite
 
 echo "==> 4) Submit one-time job: run installer notebook"
 CLUSTER_ID="${INSPIRE_DEPLOY_CLUSTER_ID:-}"
