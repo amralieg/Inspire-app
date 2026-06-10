@@ -7,6 +7,15 @@ cd "$ROOT"
 
 SKIP_BUILD="${SKIP_BUILD:-0}"
 if [[ "$SKIP_BUILD" != "1" ]]; then
+  echo "==> Installing frontend dependencies"
+  (
+    cd frontend
+    if [[ -f package-lock.json ]]; then
+      npm ci
+    else
+      npm install
+    fi
+  )
   echo "==> Building frontend (set SKIP_BUILD=1 to skip)"
   (cd frontend && npm run build)
 fi
