@@ -28,7 +28,7 @@ cd InspireAI
 bash scripts/package-for-workspace.sh
 ```
 
-This builds the frontend (unless `SKIP_BUILD=1`) and writes **dist/InspireAI-workspace.zip** (or `ARTIFACT_ZIP` if you set it).
+This builds the frontend (unless `SKIP_BUILD=1`) and writes **dist/InspireAI-workspace.zip** (or `ARTIFACT_ZIP` if you set it). The packaging script installs frontend dependencies automatically before build.
 
 ---
 
@@ -174,6 +174,7 @@ If identity resolution fails, follow the SQL hints printed by the notebook.
 | **No warehouses in widget** | Create or start a SQL warehouse in the workspace; you need at least one warehouse with an id. |
 | **Schema or grant errors** | Run as a user (or admin) with UC privileges on the chosen catalog; check warehouse is **RUNNING** or serverless as required. |
 | **App does not start** | **Compute, Apps, inspire-ai, Logs**; confirm **start.sh** and Node dependencies succeed. |
+| **Frontend build fails with missing Vite plugins** | Usually fixed by rerunning `bash scripts/package-for-workspace.sh` (it auto-installs frontend deps). If needed, run `cd frontend && npm install` and retry. |
 | **Job path exits code 2** | No running cluster for the automated Job; start a cluster, set **INSPIRE_DEPLOY_CLUSTER_ID**, or **Run All** manually on Serverless. |
 
 ---
