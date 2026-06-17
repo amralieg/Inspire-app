@@ -477,8 +477,15 @@ def step_cleanup(ctx):
     print("Cleaning up...")
     try:
         api("DELETE", f"/api/2.0/apps/{app_name}")
-        print(f"  Deleted app '{app_name}'")
-        time.sleep(5)
+        print(f"  Deleted app '{app_name}' — waiting for deletion to complete...")
+        for _ in range(24):  # up to 2 minutes
+            resp = api("GET", f"/api/2.0/apps/{app_name}")
+            if resp.status_code == 404:
+                print("  App gone ✅")
+                break
+            state = resp.json().get("compute_status", {}).get("state", "?")
+            print(f"  Still {state}, waiting...")
+            time.sleep(5)
     except Exception:
         print("  No existing app")
 
@@ -623,7 +630,7 @@ def step_deploy_and_find_sp(ctx):
     catalog = ctx["CATALOG"]
 
     sp_before = set()
-try:
+    try:
         data = api_get("/api/2.0/preview/scim/v2/ServicePrincipals?count=500")
         for sp in data.get("Resources", []):
             sp_before.add(sp.get("applicationId", ""))
@@ -646,13 +653,21 @@ try:
     else:
         raise RuntimeError(f"Create failed: {resp.text[:300]}")
 
+    compute_ready = False
     for _ in range(30):
         state = api_get(f"/api/2.0/apps/{app_name}").get("compute_status", {}).get("state", "?")
         if state == "ACTIVE":
             print("Compute: ACTIVE ✅")
+            compute_ready = True
             break
         print(f"  Compute: {state}")
         time.sleep(10)
+
+    if not compute_ready:
+        raise RuntimeError(
+            f"App compute did not reach ACTIVE after 5 minutes (still STARTING). "
+            f"Start it manually: Compute → Apps → {app_name} → Start, then re-run."
+        )
 
     resp = api("POST", f"/api/2.0/apps/{app_name}/deployments", {"source_code_path": source_folder})
     if resp.status_code not in (200, 201):
@@ -828,5 +843,5 @@ def step_render_done(ctx):
 # DBTITLE 1,Main entry point
 try:
     main()
-except (FileNotFoundError, RuntimeError) as exc:
+except (FileNotFoundError, RuntimeError, requests.exceptions.HTTPError) as exc:
     show_warning_banner("Setup incomplete", str(exc))

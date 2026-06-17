@@ -1,6 +1,3 @@
-# Inspire AI — Databricks App. Workspace zip + installer: see deployment.md in the repo.
-# Git-backed: Compute → Apps → Create from Git. Runtime injects DATABRICKS_HOST, DATABRICKS_TOKEN (if SP), PORT.
-
 command:
   - "bash"
   - "start.sh"
@@ -8,9 +5,15 @@ command:
 env:
   - name: "NODE_ENV"
     value: "production"
+  - name: "INSPIRE_DATABASE"
+    value: "amr_ali._inspire"
+  - name: "INSPIRE_AUTO_SETUP"
+    value: "true"
+  - name: "INSPIRE_WAREHOUSE_ID"
+    value: "2023d0a3a188bd24"
+  - name: "NOTEBOOK_PATH"
+    value: "/Shared/inspire-ai/dbx_inspire_ai_agent"
 
-# Service principal — the Databricks App runtime generates an OAuth token
-# and injects it as DATABRICKS_TOKEN env var automatically.
 resources:
   - name: "inspire-ai-sp"
     type: "service-principal"
